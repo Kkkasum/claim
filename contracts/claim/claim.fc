@@ -1,0 +1,194 @@
+#include "../imports/stdlib.fc";
+#include "../jetton/imports/jetton-utils.fc";
+#include "../jetton/imports/op-codes.fc";
+
+const const::tx_fee_send_jetton = 45000000;
+
+const op::deposit = "deposit"c;
+const op::claim = "claim"c;
+const op::first_claim = "first_claim"c;
+const op::withdraw_ton = "withdraw_ton"c;
+const op::withdraw_jetton = "withdraw_jetton"c;
+const op::withdraw_emergency = "withdraw_emergency"c;
+const op::boost = "boost"c;
+
+const error::access_denied = 100;
+const error::not_yet = 101;
+const error::not_enough_ton = 102;
+
+(cell) pack_data(slice jetton_master_address, cell jetton_wallet_code) impure inline {
+    cell jetton_data = begin_cell()
+        .store_slice(jetton_master_address)
+        .store_ref(jetton_wallet_code)
+    .end_cell();
+
+    return jetton_data;
+}
+
+(slice, cell) unpack_data(cell jetton_data) impure inline {
+    slice jetton_ds = jetton_data.begin_parse();
+
+    slice jetton_master_address = jetton_ds~load_msg_addr();
+    cell jetton_wallet_code = jetton_ds~load_ref();
+
+    return (jetton_master_address, jetton_wallet_code);
+}
+
+(slice, cell) load_data() inline {
+    slice ds = get_data().begin_parse();
+
+    return (
+        ds~load_msg_addr(),    ;; admin_address
+        ds~load_ref()          ;; jetton_data
+    );
+}
+
+() save_data(slice admin_address, slice jetton_master_address, cell jetton_wallet_code) impure inline {
+    cell jetton_data = pack_data(jetton_master_address, jetton_wallet_code);
+
+    set_data(
+        begin_cell()
+            .store_slice(admin_address)
+            .store_ref(jetton_data)
+        .end_cell()
+    );
+}
+
+() send_jetton(slice recepient, slice jetton_master_address, cell jetton_wallet_code, int amount) impure inline {
+    slice jetton_wallet_address = calculate_user_jetton_wallet_address(my_address(), jetton_master_address, jetton_wallet_code);
+
+    var msg = begin_cell()
+        .store_uint(0x18, 6) ;; 011000
+        .store_slice(jetton_wallet_address)
+        .store_coins(const::tx_fee_send_jetton)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        .store_uint(op::transfer(), 32)
+        .store_uint(0, 64)
+        .store_coins(amount)
+        .store_slice(recepient)
+        .store_uint(0, 2)
+        .store_uint(0, 1)
+        .store_coins(0)
+        .store_uint(0, 1)
+    .end_cell();
+
+    send_raw_message(msg, 1); ;; paying fees, revert on errors
+}
+
+() send_ton(slice recepient, int amount, int mode) impure inline {
+    var msg = begin_cell()
+        .store_uint(0x10, 6) ;; 010000
+        .store_slice(recepient)
+        .store_coins(amount)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .end_cell();
+
+    send_raw_message(msg, mode);
+}
+
+() recv_internal(cell in_msg_cell, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) {
+        ;; ignore empty messages
+        return ();
+    }
+
+    slice cs = in_msg_cell.begin_parse();
+
+    int flags = cs~load_uint(4);
+    if (flags & 1) {
+        ;; ignore all bounced messages
+        return ();
+    }
+
+    slice sender_address = cs~load_msg_addr();
+
+    int op = in_msg_body~load_uint(32);
+    in_msg_body~skip_bits(64); ;; skip query_id
+
+    if (op == op::deposit) {
+        return ();
+    }
+
+    (slice admin_address, cell jetton_data) = load_data();
+
+    if (op == op::claim) {
+        int claim_amount = in_msg_body~load_coins();
+        slice recepient = in_msg_body~load_msg_addr();
+
+        (slice jetton_master_address, cell jetton_wallet_code) = unpack_data(jetton_data);
+        send_jetton(recepient, jetton_master_address, jetton_wallet_code, claim_amount);
+
+        return ();
+    }
+
+    if (op == op::boost) {
+        int jetton_amount = in_msg_body~load_coins();
+        slice recepient = in_msg_body~load_msg_addr();
+
+        return ();
+    }
+
+    throw_unless(error::access_denied, equal_slices(sender_address, admin_address));
+
+    ;; admin
+    if (op == op::first_claim) {
+        ;; send jetton to user at first time
+        ;; maybe deploy user contracts
+
+        int claim_amount = in_msg_body~load_coins();
+        slice recepient = in_msg_body~load_msg_addr();
+
+        (slice jetton_master_address, cell jetton_wallet_code) = unpack_data(jetton_data);
+        send_jetton(recepient, jetton_master_address, jetton_wallet_code, claim_amount);
+
+        return ();
+    }
+
+    ;; withdraw
+    if (op == op::withdraw_ton) {
+        int amount = in_msg_body~load_coins();
+        [int balance, _] = get_balance();
+
+        throw_unless(error::not_enough_ton, balance - amount > 0);
+
+        send_ton(admin_address, amount, 1);
+
+        return ();
+    }
+
+    if (op == op::withdraw_jetton) {
+        int amount = in_msg_body~load_coins();
+
+        (slice jetton_master_address, cell jetton_wallet_code) = unpack_data(jetton_data);
+        send_jetton(admin_address, jetton_master_address, jetton_wallet_code, amount);
+
+        return ();
+    }
+
+    if (op == op::withdraw_emergency) {
+        int jetton_amount = in_msg_body~load_coins();
+
+        (slice jetton_master_address, cell jetton_wallet_code) = unpack_data(jetton_data);
+        send_jetton(admin_address, jetton_master_address, jetton_wallet_code, jetton_amount);
+
+        [int balance, _] = get_balance();
+        send_ton(admin_address, balance, 128 + 32);
+
+        return ();
+    }
+
+    throw(0xffff);
+}
+
+int get_smc_balance() method_id {
+    [int balance, _] = get_balance();
+
+    return balance;
+}
+
+slice get_jetton_wallet_address() method_id {
+    (_, cell jetton_data) = load_data();
+    (slice jetton_master_address, cell jetton_wallet_code) = unpack_data(jetton_data);
+    
+    return calculate_user_jetton_wallet_address(my_address(), jetton_master_address, jetton_wallet_code);
+}

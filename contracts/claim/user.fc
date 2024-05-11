@@ -1,0 +1,151 @@
+#include "../imports/stdlib.fc";
+
+const op::deposit = "deposit"c;
+const op::claim = "claim"c;
+const op::boost = "boost"c;
+const op::change_admin = "change_admin"c;
+
+const const::claim_fee = 150000000;
+
+const error::access_denied = 100;
+const error::not_yet = 101;
+const error::not_enough_ton_to_claim = 102;
+
+(cell) pack_data(slice user_address, int claim_amount, int last_transaction_time) impure inline {
+    cell user_data = begin_cell()
+        .store_slice(user_address)
+        .store_coins(claim_amount)
+        .store_int(last_transaction_time, 64)
+    .end_cell();
+
+    return user_data;
+}
+
+(slice, int, int) unpack_data(cell user_data) impure inline {
+    slice user_ds = user_data.begin_parse();
+
+    slice user_address = user_ds~load_msg_addr();
+    int claim_amount = user_ds~load_coins();
+    int last_transaction_time = user_ds~load_int(64);
+
+    return (user_address, claim_amount, last_transaction_time);
+}
+
+(slice, cell) load_data() {
+    slice ds = get_data().begin_parse();
+
+    return (
+        ds~load_msg_addr(), ;; admin_address
+        ds~load_ref()       ;; user_address, claim_amount, last_transaction_time
+    );
+}
+
+() save_data(slice admin_address, slice user_address, int claim_amount, int last_transaction_time) impure inline {
+    cell user_data = pack_data(user_address, claim_amount, last_transaction_time);
+
+    set_data(
+        begin_cell()
+            .store_slice(admin_address)
+            .store_ref(user_data)
+        .end_cell()
+    );
+}
+
+() claim(slice admin_address, int claim_amount, slice recepient) impure inline {
+    var msg = begin_cell()
+        .store_uint(0x18, 6)
+        .store_slice(admin_address)
+        .store_coins(const::claim_fee)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        .store_uint(op::claim, 32)
+        .store_uint(0, 64)
+        .store_coins(claim_amount)
+        .store_slice(recepient)
+    .end_cell();
+
+    send_raw_message(msg, 1);
+}
+
+() recv_internal(int msg_value, cell in_msg_cell, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) {
+        ;; ignore empty messages
+        return ();
+    }
+
+    slice cs = in_msg_cell.begin_parse();
+
+    int flags = cs~load_uint(4);
+    if (flags & 1) {
+        ;; ignore all bounced messages
+        return ();
+    }
+
+    slice sender_address = cs~load_msg_addr();
+
+    int op = in_msg_body~load_uint(32);
+    in_msg_body~skip_bits(64); ;; skip query_id
+
+    if (op == op::deposit) {
+        return ();
+    }
+
+    (slice admin_address, cell user_data) = load_data();
+    (slice user_address, int claim_amount, int last_transaction_time) = unpack_data(user_data);
+
+    if (op == op::claim) {
+        throw_unless(error::access_denied, equal_slices(user_address, sender_address));
+        throw_unless(error::not_yet, now() > last_transaction_time + 86400);
+        throw_unless(error::not_enough_ton_to_claim, msg_value >= const::claim_fee);
+
+        claim(admin_address, claim_amount, sender_address);
+
+        save_data(admin_address, user_address, claim_amount, now());
+
+        return ();
+    }
+
+    ;; admin
+    throw_unless(error::access_denied, equal_slices(sender_address, admin_address));
+
+    if (op == op::boost) {
+        int boost = in_msg_body~load_coins();
+        claim_amount += boost;
+
+        save_data(admin_address, user_address, claim_amount, last_transaction_time);
+
+        return ();
+    }
+
+    if (op == op::change_admin) {
+        slice new_admin_address = in_msg_body~load_msg_addr();
+
+        save_data(new_admin_address, user_address, claim_amount, last_transaction_time);
+
+        return ();
+    }
+
+    throw(0xffff);
+}
+
+int get_smc_balance() method_id {
+    [int balance, _] = get_balance();
+    return balance;
+}
+
+int get_last_transaction_time() method_id {
+    (_, cell user_data) = load_data();
+    (_, _, int last_transaction_time) = unpack_data(user_data);
+
+    return last_transaction_time;
+}
+
+int get_claim_fee() method_id {
+    return const::claim_fee;
+}
+
+(slice, slice, int, int) get_storage() method_id {
+    (slice admin_address, cell user_data) = load_data();
+    (slice user_address, int claim_amount, int last_transaction_time) = unpack_data(user_data);
+
+    return (admin_address, user_address, claim_amount, last_transaction_time);
+}
