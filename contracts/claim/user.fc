@@ -11,27 +11,25 @@ const error::access_denied = 100;
 const error::not_yet = 101;
 const error::not_enough_ton_to_claim = 102;
 
-(cell) pack_data(slice user_address, int claim_amount, int last_transaction_time) impure inline {
-    cell user_data = begin_cell()
+cell pack_user_data(slice user_address, int claim_amount, int last_transaction_time) impure inline {
+    return begin_cell()
         .store_slice(user_address)
         .store_coins(claim_amount)
         .store_int(last_transaction_time, 64)
     .end_cell();
-
-    return user_data;
 }
 
-(slice, int, int) unpack_data(cell user_data) impure inline {
+(slice, int, int) unpack_user_data(cell user_data) impure inline {
     slice user_ds = user_data.begin_parse();
 
-    slice user_address = user_ds~load_msg_addr();
-    int claim_amount = user_ds~load_coins();
-    int last_transaction_time = user_ds~load_int(64);
-
-    return (user_address, claim_amount, last_transaction_time);
+    return (
+        user_ds~load_msg_addr(),    ;; user_address
+        user_ds~load_coins(),       ;; claim_amount
+        user_ds~load_int(64)        ;; last_transaction_time
+    );
 }
 
-(slice, cell) load_data() {
+(slice, cell) load_data() inline {
     slice ds = get_data().begin_parse();
 
     return (
@@ -41,7 +39,7 @@ const error::not_enough_ton_to_claim = 102;
 }
 
 () save_data(slice admin_address, slice user_address, int claim_amount, int last_transaction_time) impure inline {
-    cell user_data = pack_data(user_address, claim_amount, last_transaction_time);
+    cell user_data = pack_user_data(user_address, claim_amount, last_transaction_time);
 
     set_data(
         begin_cell()
@@ -90,7 +88,7 @@ const error::not_enough_ton_to_claim = 102;
     }
 
     (slice admin_address, cell user_data) = load_data();
-    (slice user_address, int claim_amount, int last_transaction_time) = unpack_data(user_data);
+    (slice user_address, int claim_amount, int last_transaction_time) = unpack_user_data(user_data);
 
     if (op == op::claim) {
         throw_unless(error::access_denied, equal_slices(user_address, sender_address));
@@ -127,14 +125,9 @@ const error::not_enough_ton_to_claim = 102;
     throw(0xffff);
 }
 
-int get_smc_balance() method_id {
-    [int balance, _] = get_balance();
-    return balance;
-}
-
 int get_last_transaction_time() method_id {
     (_, cell user_data) = load_data();
-    (_, _, int last_transaction_time) = unpack_data(user_data);
+    (_, _, int last_transaction_time) = unpack_user_data(user_data);
 
     return last_transaction_time;
 }
@@ -145,7 +138,7 @@ int get_claim_fee() method_id {
 
 (slice, slice, int, int) get_storage() method_id {
     (slice admin_address, cell user_data) = load_data();
-    (slice user_address, int claim_amount, int last_transaction_time) = unpack_data(user_data);
+    (slice user_address, int claim_amount, int last_transaction_time) = unpack_user_data(user_data);
 
     return (admin_address, user_address, claim_amount, last_transaction_time);
 }

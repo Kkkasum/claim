@@ -1,0 +1,55 @@
+#include "./stdlib.fc";
+
+cell pack_jetton_data(slice jetton_master_address, cell jetton_wallet_code) impure inline {
+    return begin_cell()
+        .store_slice(jetton_master_address)
+        .store_ref(jetton_wallet_code)
+    .end_cell();
+}
+
+(slice, cell) unpack_jetton_data(cell jetton_data) impure inline {
+    slice jetton_ds = jetton_data.begin_parse();
+
+    return (
+        jetton_ds~load_msg_addr(),  ;; jetton_master_address
+        jetton_ds~load_ref()        ;; jetton_wallet_code
+    );
+}
+
+cell build_state_init(cell init_code, cell init_data) inline {
+    return begin_cell()
+        .store_uint(0, 1)
+        .store_uint(0, 1)
+        .store_uint(1, 1)
+        .store_uint(1, 1)
+        .store_uint(0, 1)
+        .store_ref(init_code)
+        .store_ref(init_data)
+    .end_cell();
+}
+
+slice calc_address(cell state_init) inline {
+    return begin_cell()
+        .store_uint(2, 2)
+        .store_uint(0, 1)
+        .store_uint(0, 8)
+        .store_uint(cell_hash(state_init), 256)
+    .end_cell().begin_parse();
+}
+
+slice calc_user_contract_address(slice admin_address, cell user_contract_code, slice user_address) inline {
+    cell init_data = begin_cell()
+        .store_slice(admin_address)
+        .store_ref(
+            begin_cell()
+                .store_slice(user_address)
+                .store_coins(1000000000)
+                .store_int(0, 64)
+            .end_cell()
+        )
+    .end_cell();
+
+    cell state_init = build_state_init(user_contract_code, init_data);
+
+    return calc_address(state_init);
+}

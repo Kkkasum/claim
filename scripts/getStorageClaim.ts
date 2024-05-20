@@ -1,6 +1,6 @@
+import { NetworkProvider } from '@ton/blueprint';
 import { Address } from '@ton/core';
 import { Claim } from '../wrappers/Claim';
-import { NetworkProvider } from '@ton/blueprint';
 
 export async function run(provider: NetworkProvider, args: string[]) {
     const ui = provider.ui();
@@ -19,7 +19,4 @@ export async function run(provider: NetworkProvider, args: string[]) {
 
     ui.write(`Balance: ${balance}`);
     ui.write(`Jetton Wallet Address: ${jetton_wallet_address}`);
-
-    ui.clearActionPrompt();
-    ui.write('Claim storage got successfully');
 }

@@ -1,11 +1,10 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from '@ton/core';
-import { JettonWallet } from '@ton/ton';
 
 export type ClaimConfig = {
     adminAddress: Address;
-    // userContractAddress: Address;
     jettonMasterAddress: Address;
     jettonWalletCode: Cell;
+    userContractCode: Cell;
 };
 
 export const Opcodes = {
@@ -21,17 +20,16 @@ export const Opcodes = {
 export function claimConfigToCell(config: ClaimConfig): Cell {
     return beginCell()
         .storeAddress(config.adminAddress)
-        .storeRef(
-            beginCell()
-                .storeAddress(config.jettonMasterAddress)
-                .storeRef(config.jettonWalletCode)
-            .endCell()
-        )
-    .endCell();
+        .storeRef(beginCell().storeAddress(config.jettonMasterAddress).storeRef(config.jettonWalletCode).endCell())
+        .storeRef(config.userContractCode)
+        .endCell();
 }
 
 export class Claim implements Contract {
-    constructor(readonly address: Address, readonly init?: { code: Cell; data: Cell }) {}
+    constructor(
+        readonly address: Address,
+        readonly init?: { code: Cell; data: Cell },
+    ) {}
 
     static createFromAddress(address: Address) {
         return new Claim(address);
@@ -55,21 +53,39 @@ export class Claim implements Contract {
         await provider.internal(via, {
             value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell().storeUint(Opcodes.deposit, 32).storeInt(0, 64).endCell(),
+        });
+    }
+
+    async sendFirstClaim(
+        provider: ContractProvider,
+        via: Sender,
+        opts: {
+            value: bigint;
+            claimAmount: bigint;
+            recepient: Address;
+        },
+    ) {
+        await provider.internal(via, {
+            value: opts.value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell()
-                .storeUint(Opcodes.deposit, 32)
+                .storeUint(Opcodes.firstClaim, 32)
                 .storeInt(0, 64)
-            .endCell(),
+                .storeCoins(opts.claimAmount)
+                .storeAddress(opts.recepient)
+                .endCell(),
         });
     }
 
     async sendClaim(
-        provider: ContractProvider, 
-        via: Sender, 
+        provider: ContractProvider,
+        via: Sender,
         opts: {
-            value: bigint, 
-            claimAmount: bigint, 
-            recepient: Address
-        }
+            value: bigint;
+            claimAmount: bigint;
+            recepient: Address;
+        },
     ) {
         await provider.internal(via, {
             value: opts.value,
@@ -79,41 +95,37 @@ export class Claim implements Contract {
                 .storeInt(0, 64)
                 .storeCoins(opts.claimAmount)
                 .storeAddress(opts.recepient)
-            .endCell()
-        })
-    }
-
-    async sendWithdrawTon(provider: ContractProvider, via: Sender,
-        opts: {
-            value: bigint,
-            amount: bigint
-        }
-    ) {
-        await provider.internal(via, {
-            value: opts.value,
-            sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell()
-                .storeUint(Opcodes.withdrawTon, 32)
-                .storeInt(0, 64)
-                .storeCoins(opts.amount)
-            .endCell(),
+                .endCell(),
         });
     }
 
-    async sendWithdrawJetton(provider: ContractProvider, via: Sender,
+    async sendWithdrawTon(
+        provider: ContractProvider,
+        via: Sender,
         opts: {
-            value: bigint,
-            amount: bigint
-        }
+            value: bigint;
+            amount: bigint;
+        },
     ) {
         await provider.internal(via, {
             value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell()
-                .storeUint(Opcodes.withdrawJetton, 32)
-                .storeInt(0, 64)
-                .storeCoins(opts.amount)
-            .endCell(),
+            body: beginCell().storeUint(Opcodes.withdrawTon, 32).storeInt(0, 64).storeCoins(opts.amount).endCell(),
+        });
+    }
+
+    async sendWithdrawJetton(
+        provider: ContractProvider,
+        via: Sender,
+        opts: {
+            value: bigint;
+            amount: bigint;
+        },
+    ) {
+        await provider.internal(via, {
+            value: opts.value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell().storeUint(Opcodes.withdrawJetton, 32).storeInt(0, 64).storeCoins(opts.amount).endCell(),
         });
     }
 
@@ -121,22 +133,26 @@ export class Claim implements Contract {
         await provider.internal(via, {
             value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell()
-                .storeUint(Opcodes.withdrawEmergency, 32)
-                .storeInt(0, 64)
-                .storeCoins(100)
-            .endCell(),
+            body: beginCell().storeUint(Opcodes.withdrawEmergency, 32).storeInt(0, 64).storeCoins(100).endCell(),
         });
     }
 
-    async getBalance(provider: ContractProvider): Promise<number> {
-        const result = await provider.get('get_smc_balance', []);
+    async getUserContractAddress(provider: ContractProvider, userAddress: Address): Promise<Address> {
+        const result = await provider.get('get_user_contract_address', [
+            { type: 'slice', cell: beginCell().storeAddress(userAddress).endCell() },
+        ]);
 
-        return result.stack.readNumber();
+        return result.stack.readAddress();
+    }
+
+    async getBalance(provider: ContractProvider): Promise<bigint> {
+        const result = await provider.getState();
+
+        return result.balance;
     }
 
     async getJettonWalletAddress(provider: ContractProvider): Promise<Address> {
-        const storage = await provider.get('get_jetton_wallet_address', []);        
+        const storage = await provider.get('get_jetton_wallet_address', []);
 
         return storage.stack.readAddress();
     }

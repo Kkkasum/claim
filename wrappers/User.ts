@@ -1,4 +1,14 @@
-import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode, toNano } from '@ton/core';
+import {
+    Address,
+    beginCell,
+    Cell,
+    Contract,
+    contractAddress,
+    ContractProvider,
+    Sender,
+    SendMode,
+    toNano,
+} from '@ton/core';
 
 export type UserConfig = {
     adminAddress: Address;
@@ -15,18 +25,15 @@ export const Opcodes = {
 export function userConfigToCell(config: UserConfig): Cell {
     return beginCell()
         .storeAddress(config.adminAddress)
-        .storeRef(
-            beginCell()
-                .storeAddress(config.userAddress)
-                .storeCoins(toNano('1'))
-                .storeInt(0, 64)
-            .endCell()
-        )
-    .endCell();
+        .storeRef(beginCell().storeAddress(config.userAddress).storeCoins(toNano('1')).storeInt(0, 64).endCell())
+        .endCell();
 }
 
 export class User implements Contract {
-    constructor(readonly address: Address, readonly init?: { code: Cell; data: Cell }) {}
+    constructor(
+        readonly address: Address,
+        readonly init?: { code: Cell; data: Cell },
+    ) {}
 
     static createFromAddress(address: Address) {
         return new User(address);
@@ -50,27 +57,24 @@ export class User implements Contract {
         await provider.internal(via, {
             value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell()
-                .storeUint(Opcodes.claim, 32)
-                .storeInt(0, 64)
-            .endCell(),
+            body: beginCell().storeUint(Opcodes.claim, 32).storeInt(0, 64).endCell(),
         });
     }
 
-    async getBalance(provider: ContractProvider): Promise<number> {
-        const result = await provider.get('get_smc_balance', []);
+    async getBalance(provider: ContractProvider): Promise<bigint> {
+        const result = await provider.getState();
 
-        return result.stack.readNumber();
+        return result.balance;
     }
 
     async getStorage(provider: ContractProvider): Promise<[Address, Address, bigint, number]> {
         const result = await provider.get('get_storage', []);
 
         return [
-            result.stack.readAddress(),    // admin_address
-            result.stack.readAddress(),    // user_address
-            result.stack.readBigNumber(),  // claim_amount
-            result.stack.readNumber()      // last_transaction_time
+            result.stack.readAddress(), // admin_address
+            result.stack.readAddress(), // user_address
+            result.stack.readBigNumber(), // claim_amount
+            result.stack.readNumber(), // last_transaction_time
         ];
     }
 

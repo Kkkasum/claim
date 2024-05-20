@@ -1,12 +1,37 @@
-import { Address, toNano } from '@ton/core';
-import { compile, NetworkProvider } from '@ton/blueprint';
+import { NetworkProvider, compile } from '@ton/blueprint';
+import { toNano } from '@ton/core';
+import {
+    ADMIN_ADDRESS,
+    JETTON_BYTE_CODE,
+    JETTON_MASTER_ADDRESS,
+    USER_ADDRESS,
+    USER_CONTRACT_CODE,
+} from '../helpers/constants';
+import { Claim } from '../wrappers/Claim';
 import { User } from '../wrappers/User';
 
 export async function run(provider: NetworkProvider) {
-    const user = provider.open(User.createFromConfig({
-        adminAddress: Address.parse('EQA3It_9NCn1OWsEUzniY0VLw6lCEfDcbOYnlBjlrjy-ck9g'),
-        userAddress: Address.parse('EQAZ3LMya7tedN2NWSmitV2lg5HR3RfMxPSVDVFZ3s8b9jwU'),
-    }, await compile('User')));
+    const claim = provider.open(
+        Claim.createFromConfig(
+            {
+                adminAddress: ADMIN_ADDRESS,
+                jettonMasterAddress: JETTON_MASTER_ADDRESS,
+                jettonWalletCode: JETTON_BYTE_CODE,
+                userContractCode: USER_CONTRACT_CODE,
+            },
+            await compile('Claim'),
+        ),
+    );
+
+    const user = provider.open(
+        User.createFromConfig(
+            {
+                adminAddress: claim.address,
+                userAddress: USER_ADDRESS,
+            },
+            await compile('User'),
+        ),
+    );
 
     await user.sendDeploy(provider.sender(), toNano('0.05'));
 
