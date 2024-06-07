@@ -8,13 +8,17 @@ export type ClaimConfig = {
 };
 
 export const Opcodes = {
-    deposit: 0x95db9d39,
     claim: 0xa769de27,
     firstClaim: 0x862ad82d,
+    boost: 0x56642768,
     withdrawTon: 0x37726bdb,
     withdrawJetton: 0x11c09682,
     withdrawEmergency: 0x781282d4,
-    boost: 0x56642768,
+};
+
+export const Error = {
+    accessDenied: 100,
+    notEnoughTon: 101,
 };
 
 export function claimConfigToCell(config: ClaimConfig): Cell {
@@ -49,11 +53,24 @@ export class Claim implements Contract {
         });
     }
 
-    async sendDeposit(provider: ContractProvider, via: Sender, value: bigint) {
+    async sendClaim(
+        provider: ContractProvider,
+        via: Sender,
+        opts: {
+            value: bigint;
+            claimAmount: bigint;
+            recepient: Address;
+        },
+    ) {
         await provider.internal(via, {
-            value,
+            value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell().storeUint(Opcodes.deposit, 32).storeInt(0, 64).endCell(),
+            body: beginCell()
+                .storeUint(Opcodes.claim, 32)
+                .storeUint(0, 64)
+                .storeCoins(opts.claimAmount)
+                .storeAddress(opts.recepient)
+                .endCell(),
         });
     }
 
@@ -71,30 +88,30 @@ export class Claim implements Contract {
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell()
                 .storeUint(Opcodes.firstClaim, 32)
-                .storeInt(0, 64)
+                .storeUint(0, 64)
                 .storeCoins(opts.claimAmount)
                 .storeAddress(opts.recepient)
                 .endCell(),
         });
     }
 
-    async sendClaim(
+    async sendBoost(
         provider: ContractProvider,
         via: Sender,
         opts: {
             value: bigint;
-            claimAmount: bigint;
-            recepient: Address;
+            userAddress: Address;
+            boost: bigint;
         },
     ) {
         await provider.internal(via, {
             value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell()
-                .storeUint(Opcodes.claim, 32)
-                .storeInt(0, 64)
-                .storeCoins(opts.claimAmount)
-                .storeAddress(opts.recepient)
+                .storeUint(Opcodes.boost, 32)
+                .storeUint(0, 64)
+                .storeAddress(opts.userAddress)
+                .storeCoins(opts.boost)
                 .endCell(),
         });
     }
@@ -110,7 +127,7 @@ export class Claim implements Contract {
         await provider.internal(via, {
             value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell().storeUint(Opcodes.withdrawTon, 32).storeInt(0, 64).storeCoins(opts.amount).endCell(),
+            body: beginCell().storeUint(Opcodes.withdrawTon, 32).storeUint(0, 64).storeCoins(opts.amount).endCell(),
         });
     }
 
@@ -125,24 +142,27 @@ export class Claim implements Contract {
         await provider.internal(via, {
             value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell().storeUint(Opcodes.withdrawJetton, 32).storeInt(0, 64).storeCoins(opts.amount).endCell(),
+            body: beginCell().storeUint(Opcodes.withdrawJetton, 32).storeUint(0, 64).storeCoins(opts.amount).endCell(),
         });
     }
 
-    async sendWithdrawEmergency(provider: ContractProvider, via: Sender, value: bigint) {
+    async sendWithdrawEmergency(
+        provider: ContractProvider,
+        via: Sender,
+        opts: {
+            value: bigint;
+            jettonAmount: bigint;
+        },
+    ) {
         await provider.internal(via, {
-            value,
+            value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell().storeUint(Opcodes.withdrawEmergency, 32).storeInt(0, 64).storeCoins(100).endCell(),
+            body: beginCell()
+                .storeUint(Opcodes.withdrawEmergency, 32)
+                .storeUint(0, 64)
+                .storeCoins(opts.jettonAmount)
+                .endCell(),
         });
-    }
-
-    async getUserContractAddress(provider: ContractProvider, userAddress: Address): Promise<Address> {
-        const result = await provider.get('get_user_contract_address', [
-            { type: 'slice', cell: beginCell().storeAddress(userAddress).endCell() },
-        ]);
-
-        return result.stack.readAddress();
     }
 
     async getBalance(provider: ContractProvider): Promise<bigint> {
@@ -151,9 +171,11 @@ export class Claim implements Contract {
         return result.balance;
     }
 
-    async getJettonWalletAddress(provider: ContractProvider): Promise<Address> {
-        const storage = await provider.get('get_jetton_wallet_address', []);
+    async getUserContractAddress(provider: ContractProvider, userAddress: Address): Promise<Address> {
+        const result = await provider.get('get_user_contract_address', [
+            { type: 'slice', cell: beginCell().storeAddress(userAddress).endCell() },
+        ]);
 
-        return storage.stack.readAddress();
+        return result.stack.readAddress();
     }
 }

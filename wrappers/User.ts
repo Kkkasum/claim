@@ -16,16 +16,21 @@ export type UserConfig = {
 };
 
 export const Opcodes = {
-    deposit: 0x95db9d39,
     claim: 0xa769de27,
     boost: 0x56642768,
-    changeAdmin: 0xd4deb03b,
+    withdrawEmergency: 0x781282d4,
+};
+
+export const Error = {
+    accessDenied: 100,
+    notEnoughTon: 101,
+    notYet: 102,
 };
 
 export function userConfigToCell(config: UserConfig): Cell {
     return beginCell()
         .storeAddress(config.adminAddress)
-        .storeRef(beginCell().storeAddress(config.userAddress).storeCoins(toNano('1')).storeInt(0, 64).endCell())
+        .storeRef(beginCell().storeAddress(config.userAddress).storeCoins(toNano('1')).storeUint(0, 64).endCell())
         .endCell();
 }
 
@@ -57,7 +62,15 @@ export class User implements Contract {
         await provider.internal(via, {
             value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell().storeUint(Opcodes.claim, 32).storeInt(0, 64).endCell(),
+            body: beginCell().storeUint(Opcodes.claim, 32).storeUint(0, 64).endCell(),
+        });
+    }
+
+    async sendWithdrawEmergency(provider: ContractProvider, via: Sender, value: bigint) {
+        await provider.internal(via, {
+            value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell().storeUint(Opcodes.withdrawEmergency, 32).storeUint(0, 64).endCell(),
         });
     }
 
@@ -82,6 +95,12 @@ export class User implements Contract {
         const storage = await this.getStorage(provider);
 
         return storage[0];
+    }
+
+    async getUserAddress(provider: ContractProvider): Promise<Address> {
+        const storage = await this.getStorage(provider);
+
+        return storage[1];
     }
 
     async getClaimAmount(provider: ContractProvider): Promise<bigint> {

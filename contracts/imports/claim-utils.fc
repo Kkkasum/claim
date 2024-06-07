@@ -28,7 +28,7 @@ cell build_state_init(cell init_code, cell init_data) inline {
     .end_cell();
 }
 
-slice calc_address(cell state_init) inline {
+slice calculate_address(cell state_init) inline {
     return begin_cell()
         .store_uint(2, 2)
         .store_uint(0, 1)
@@ -37,19 +37,19 @@ slice calc_address(cell state_init) inline {
     .end_cell().begin_parse();
 }
 
-slice calc_user_contract_address(slice admin_address, cell user_contract_code, slice user_address) inline {
+slice calculate_user_contract_address(slice admin_address, slice user_address, cell user_contract_code) inline {
     cell init_data = begin_cell()
         .store_slice(admin_address)
         .store_ref(
             begin_cell()
                 .store_slice(user_address)
                 .store_coins(1000000000)
-                .store_int(0, 64)
+                .store_uint(0, 64)
             .end_cell()
         )
     .end_cell();
 
     cell state_init = build_state_init(user_contract_code, init_data);
 
-    return calc_address(state_init);
+    return calculate_address(state_init);
 }

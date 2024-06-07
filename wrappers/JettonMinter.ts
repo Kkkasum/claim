@@ -1,10 +1,25 @@
-import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode, TupleItem } from '@ton/core';
-import { TupleItemSlice } from '@ton/core';
+import {
+    Address,
+    beginCell,
+    Cell,
+    Contract,
+    contractAddress,
+    ContractProvider,
+    Sender,
+    SendMode,
+    TupleItemSlice,
+} from '@ton/core';
 
 export type JettonMinterConfig = {
     adminAddress: Address;
     content: Cell;
     jettonWalletCode: Cell;
+};
+
+export const Opcodes = {
+    mint: 0x1674b0a0,
+    changeAdmin: 0x4840664f,
+    changeContent: 0x5773d1f5,
 };
 
 export function jettonMinterConfigToCell(config: JettonMinterConfig): Cell {
@@ -13,11 +28,14 @@ export function jettonMinterConfigToCell(config: JettonMinterConfig): Cell {
         .storeAddress(config.adminAddress)
         .storeRef(config.content)
         .storeRef(config.jettonWalletCode)
-    .endCell();
+        .endCell();
 }
 
 export class JettonMinter implements Contract {
-    constructor(readonly address: Address, readonly init?: { code: Cell; data: Cell }) {}
+    constructor(
+        readonly address: Address,
+        readonly init?: { code: Cell; data: Cell },
+    ) {}
 
     static createFromAddress(address: Address) {
         return new JettonMinter(address);
@@ -38,62 +56,45 @@ export class JettonMinter implements Contract {
         });
     }
 
-    async sendMint(provider: ContractProvider, via: Sender, 
+    async sendMint(
+        provider: ContractProvider,
+        via: Sender,
         opts: {
+            value: bigint;
             toAddress: Address;
             jettonAmount: bigint;
-            amount: bigint;
-            queryId: number;
-            value: bigint;
-        }
+            forwardTonAmount: bigint;
+            totalTonAmount: bigint;
+        },
     ) {
         await provider.internal(via, {
             value: opts.value,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell()
-                .storeUint(21, 32)
-                .storeUint(opts.queryId, 64)
+                .storeUint(Opcodes.mint, 32)
+                .storeUint(0, 64)
                 .storeAddress(opts.toAddress)
-                .storeCoins(opts.amount)
-                .storeRef(
-                    beginCell()
-                        .storeUint(0x178d4519, 32)
-                        .storeUint(opts.queryId, 64)
-                        .storeCoins(opts.jettonAmount)
-                        .storeAddress(this.address)
-                        .storeAddress(this.address)
-                        .storeCoins(0)
-                        .storeUint(0, 1)
-                    .endCell()
-                )
-            .endCell(),
+                .storeCoins(opts.jettonAmount)
+                .storeCoins(opts.forwardTonAmount)
+                .storeCoins(opts.totalTonAmount)
+                .endCell(),
         });
     }
 
-    async getWalletAddress(provider: ContractProvider, address: Address) : Promise<Address> {
+    async getWalletAddress(provider: ContractProvider, address: Address): Promise<Address> {
         const result = await provider.get('get_wallet_address', [
             {
                 type: 'slice',
-                cell: beginCell().storeAddress(address).endCell()
-            } as TupleItemSlice
+                cell: beginCell().storeAddress(address).endCell(),
+            } as TupleItemSlice,
         ]);
 
         return result.stack.readAddress();
     }
 
-    async getTotalsupply(provider: ContractProvider) : Promise<bigint> {
+    async getTotalSupply(provider: ContractProvider): Promise<bigint> {
         const result = await provider.get('get_jetton_data', []);
 
         return result.stack.readBigNumber();
-    }
-
-    async getWalletCell(provider: ContractProvider): Promise<any> {
-        const result = await provider.get('get_jetton_data', []);
-        result.stack.pop()
-        result.stack.pop()
-        result.stack.pop()
-        result.stack.pop()
-
-        return result.stack.pop();
     }
 }

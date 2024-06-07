@@ -1,0 +1,7 @@
+const op::deposit = "deposit"c;
+const op::claim = "claim"c;
+const op::first_claim = "first_claim"c;
+const op::boost = "boost"c;
+const op::withdraw_ton = "withdraw_ton"c;
+const op::withdraw_jetton = "withdraw_jetton"c;
+const op::withdraw_emergency = "withdraw_emergency"c;

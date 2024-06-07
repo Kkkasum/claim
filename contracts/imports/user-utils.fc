@@ -1,0 +1,17 @@
+cell pack_user_data(slice user_address, int claim_amount, int last_transaction_time) impure inline {
+    return begin_cell()
+        .store_slice(user_address)
+        .store_coins(claim_amount)
+        .store_int(last_transaction_time, 64)
+    .end_cell();
+}
+
+(slice, int, int) unpack_user_data(cell user_data) impure inline {
+    slice user_ds = user_data.begin_parse();
+
+    return (
+        user_ds~load_msg_addr(),    ;; user_address
+        user_ds~load_coins(),       ;; claim_amount
+        user_ds~load_int(64)        ;; last_transaction_time
+    );
+}

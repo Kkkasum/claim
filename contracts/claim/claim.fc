@@ -1,22 +1,12 @@
 #include "../imports/stdlib.fc";
-#include "../imports/utils.fc";
+#include "../imports/claim-utils.fc";
+#include "../imports/op-codes.fc";
+#include "../imports/error-codes.fc";
 #include "../jetton/imports/jetton-utils.fc";
 #include "../jetton/imports/op-codes.fc";
 
 const const::tx_fee_send_jetton = 45000000;
 const const::tx_fee_boost = 15000000;
-
-const op::deposit = "deposit"c;
-const op::claim = "claim"c;
-const op::first_claim = "first_claim"c;
-const op::boost = "boost"c;
-const op::withdraw_ton = "withdraw_ton"c;
-const op::withdraw_jetton = "withdraw_jetton"c;
-const op::withdraw_emergency = "withdraw_emergency"c;
-
-const error::access_denied = 100;
-const error::not_yet = 101;
-const error::not_enough_ton = 102;
 
 (slice, cell, cell) load_data() inline {
     slice ds = get_data().begin_parse();
@@ -48,7 +38,7 @@ const error::not_enough_ton = 102;
         .store_slice(jetton_wallet_address)
         .store_coins(const::tx_fee_send_jetton)
         .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-        .store_uint(op::transfer(), 32)
+        .store_uint(op::transfer, 32)
         .store_uint(0, 64)
         .store_coins(amount)
         .store_slice(recepient)
@@ -72,10 +62,12 @@ const error::not_enough_ton = 102;
     send_raw_message(msg, mode);
 }
 
-() send_boost(slice recepient, int boost) impure inline {
+() send_boost(slice user_address, cell user_contract_code, int boost) impure inline {
+    slice user_contract_address = calculate_user_contract_address(my_address(), user_address, user_contract_code);
+
     var msg = begin_cell()
         .store_uint(0x10, 6)
-        .store_slice(recepient)
+        .store_slice(user_contract_address)
         .store_coins(const::tx_fee_boost)
         .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
         .store_uint(op::boost, 32)
@@ -105,17 +97,13 @@ const error::not_enough_ton = 102;
     int op = in_msg_body~load_uint(32);
     in_msg_body~skip_bits(64); ;; skip query_id
 
-    if (op == op::deposit) {
-        return ();
-    }
-
     (slice admin_address, cell jetton_data, cell user_contract_code) = load_data();
 
     if (op == op::claim) {
         int claim_amount = in_msg_body~load_coins();
         slice recepient = in_msg_body~load_msg_addr();
 
-        slice user_contract_address = calc_user_contract_address(my_address(), user_contract_code, recepient);
+        slice user_contract_address = calculate_user_contract_address(my_address(), recepient, user_contract_code);
         throw_unless(error::access_denied, equal_slices(sender_address, user_contract_address));
 
         (slice jetton_master_address, cell jetton_wallet_code) = unpack_jetton_data(jetton_data);
@@ -138,10 +126,10 @@ const error::not_enough_ton = 102;
     }
 
     if (op == op::boost) {
+        slice user_address = in_msg_body~load_msg_addr();
         int boost = in_msg_body~load_coins();
-        slice recepient = in_msg_body~load_msg_addr();
 
-        send_boost(recepient, boost);
+        send_boost(user_address, user_contract_code, boost);
 
         return ();
     }
@@ -173,8 +161,7 @@ const error::not_enough_ton = 102;
         (slice jetton_master_address, cell jetton_wallet_code) = unpack_jetton_data(jetton_data);
         send_jetton(admin_address, jetton_master_address, jetton_wallet_code, jetton_amount);
 
-        [int balance, _] = get_balance();
-        send_ton(admin_address, balance, 128 + 32);
+        send_ton(admin_address, 0, 128 + 32);
 
         return ();
     }
@@ -185,12 +172,5 @@ const error::not_enough_ton = 102;
 slice get_user_contract_address(slice user_address) method_id {
     (_, _, cell user_contract_code) = load_data();
 
-    return calc_user_contract_address(my_address(), user_contract_code, user_address);
-}
-
-slice get_jetton_wallet_address() method_id {
-    (_, cell jetton_data, _) = load_data();
-    (slice jetton_master_address, cell jetton_wallet_code) = unpack_jetton_data(jetton_data);
-    
-    return calculate_user_jetton_wallet_address(my_address(), jetton_master_address, jetton_wallet_code);
+    return calculate_user_contract_address(my_address(), user_address, user_contract_code);
 }

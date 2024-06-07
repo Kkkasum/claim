@@ -1,33 +1,9 @@
 #include "../imports/stdlib.fc";
-
-const op::deposit = "deposit"c;
-const op::claim = "claim"c;
-const op::boost = "boost"c;
-const op::change_admin = "change_admin"c;
+#include "../imports/user-utils.fc";
+#include "../imports/op-codes.fc";
+#include "../imports/error-codes.fc";
 
 const const::claim_fee = 150000000;
-
-const error::access_denied = 100;
-const error::not_yet = 101;
-const error::not_enough_ton_to_claim = 102;
-
-cell pack_user_data(slice user_address, int claim_amount, int last_transaction_time) impure inline {
-    return begin_cell()
-        .store_slice(user_address)
-        .store_coins(claim_amount)
-        .store_int(last_transaction_time, 64)
-    .end_cell();
-}
-
-(slice, int, int) unpack_user_data(cell user_data) impure inline {
-    slice user_ds = user_data.begin_parse();
-
-    return (
-        user_ds~load_msg_addr(),    ;; user_address
-        user_ds~load_coins(),       ;; claim_amount
-        user_ds~load_int(64)        ;; last_transaction_time
-    );
-}
 
 (slice, cell) load_data() inline {
     slice ds = get_data().begin_parse();
@@ -64,6 +40,17 @@ cell pack_user_data(slice user_address, int claim_amount, int last_transaction_t
     send_raw_message(msg, 1);
 }
 
+() withdraw_all_ton(slice recepient) impure inline {
+    var msg = begin_cell()
+        .store_uint(0x10, 6) ;; 010000
+        .store_slice(recepient)
+        .store_coins(0)
+        .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .end_cell();
+
+    send_raw_message(msg, 128 + 32);
+}
+
 () recv_internal(int msg_value, cell in_msg_cell, slice in_msg_body) impure {
     if (in_msg_body.slice_empty?()) {
         ;; ignore empty messages
@@ -83,17 +70,13 @@ cell pack_user_data(slice user_address, int claim_amount, int last_transaction_t
     int op = in_msg_body~load_uint(32);
     in_msg_body~skip_bits(64); ;; skip query_id
 
-    if (op == op::deposit) {
-        return ();
-    }
-
     (slice admin_address, cell user_data) = load_data();
     (slice user_address, int claim_amount, int last_transaction_time) = unpack_user_data(user_data);
 
     if (op == op::claim) {
         throw_unless(error::access_denied, equal_slices(user_address, sender_address));
+        throw_unless(error::not_enough_ton, msg_value >= const::claim_fee);
         throw_unless(error::not_yet, now() > last_transaction_time + 86400);
-        throw_unless(error::not_enough_ton_to_claim, msg_value >= const::claim_fee);
 
         claim(admin_address, claim_amount, sender_address);
 
@@ -114,10 +97,8 @@ cell pack_user_data(slice user_address, int claim_amount, int last_transaction_t
         return ();
     }
 
-    if (op == op::change_admin) {
-        slice new_admin_address = in_msg_body~load_msg_addr();
-
-        save_data(new_admin_address, user_address, claim_amount, last_transaction_time);
+    if (op == op::withdraw_emergency) {
+        withdraw_all_ton(admin_address);
 
         return ();
     }

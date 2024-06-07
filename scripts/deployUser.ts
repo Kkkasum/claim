@@ -1,12 +1,6 @@
 import { NetworkProvider, compile } from '@ton/blueprint';
 import { toNano } from '@ton/core';
-import {
-    ADMIN_ADDRESS,
-    JETTON_BYTE_CODE,
-    JETTON_MASTER_ADDRESS,
-    USER_ADDRESS,
-    USER_CONTRACT_CODE,
-} from '../helpers/constants';
+import { ADMIN_ADDRESS, JETTON_BYTE_CODE, JETTON_MASTER_ADDRESS, USER_ADDRESS } from '../helpers/constants';
 import { Claim } from '../wrappers/Claim';
 import { User } from '../wrappers/User';
 
@@ -17,7 +11,7 @@ export async function run(provider: NetworkProvider) {
                 adminAddress: ADMIN_ADDRESS,
                 jettonMasterAddress: JETTON_MASTER_ADDRESS,
                 jettonWalletCode: JETTON_BYTE_CODE,
-                userContractCode: USER_CONTRACT_CODE,
+                userContractCode: await compile('User'),
             },
             await compile('Claim'),
         ),

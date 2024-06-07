@@ -1,7 +1,5 @@
 import { Address, Cell } from '@ton/core';
 
-import userContractCode from '../build/User.compiled.json';
-
 export const ADMIN_ADDRESS = Address.parse('EQBFq22JIfDafwRnerTK-8gVlevWQzPUJjTkvJkUVdxufHZz');
 
 export const JETTON_MASTER_ADDRESS = Address.parse('kQAyiCzg1aXZvo11trVJnpmJqD94egx6V1njV5fSlRCAPttg'); // JVT
@@ -14,5 +12,3 @@ export const JETTON_BYTE_CODE = Cell.fromBoc(
 )[0];
 
 export const USER_ADDRESS = Address.parse('UQA42cXENEQIFdyGn0LvkMATaTXVGKspTHalqReI9VKZPLhS');
-
-export const USER_CONTRACT_CODE = Cell.fromBoc(Buffer.from(userContractCode['hex'], 'hex'))[0];
